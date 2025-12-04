@@ -52,7 +52,7 @@
       var blobStorageConfig = {
         accountName: "sagasparmaps",
         containerName: "files",
-        sasToken: "", // SAS token com permissões de write - Key
+        sasToken: "#Change here#", // SAS token com permissões de write - #Change here#
       };
 
       function getMap() {
@@ -80,8 +80,9 @@
             // Alternatively, use an Azure Maps key.
             // Get an Azure Maps key at https://azure.com/maps.
             // NOTE: The primary key should be used as the key.
+            // #Change here#
             authType: "subscriptionKey",
-            subscriptionKey: "",
+            subscriptionKey: "#Change here#",
           },
         });
 
