@@ -1,0 +1,401 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Route Waypoint Optimization - Azure Maps Web SDK Samples</title>
+
+    <meta charset="utf-8" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <meta
+      name="description"
+      content="This sample shows how to calculate routes with and without waypoint optimization using the Azure Maps REST Route API."
+    />
+    <meta
+      name="keywords"
+      content="Microsoft maps, map, gis, API, SDK, route directions service, direcitons, travelling salesmen problem, route optimization, optimize, vehicle routing problem, VRP, TSP"
+    />
+    <meta name="author" content="Microsoft Azure Maps" />
+    <meta name="version" content="2.0" />
+    <meta name="screenshot" content="screenshot.jpg" />
+
+    <!-- Add references to the Azure Maps Map control JavaScript and CSS files. -->
+    <link
+      href="https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.js"></script>
+
+    <!-- Add a reference to the Azure Maps Rest Helper JavaScript file. -->
+    <script src="https://samples.azuremaps.com/lib/azure-maps/azure-maps-helper.min.js"></script>
+
+    <script>
+      var map, datasource, routeLine, waypointQuery, defaultOrder;
+
+      var restRoutingRequestUrl =
+        "https://{azMapsDomain}/route/directions/json?api-version=1.0&query={query}&routeRepresentation=polyline&travelMode=car&view=Auto";
+
+      var waypoints = [
+        [-122.336502, 47.606544],
+        [-122.360861, 47.495472],
+        [-122.204821, 47.759892],
+        [-122.120415, 47.670682],
+        [-122.213369, 47.480133],
+        [-122.193689, 47.615556],
+        [-122.206054, 47.676508],
+      ];
+
+      // Azure Blob Storage Configuration
+      var blobStorageConfig = {
+        accountName: "sagasparmaps",
+        containerName: "files",
+        sasToken: "", // SAS token com permissões de write - Key
+      };
+
+      function getMap() {
+        console.log("🗺️ Inicializando mapa...");
+        //Initialize a map instance.
+        map = new atlas.Map("myMap", {
+          center: [-122.216217, 47.619383],
+          zoom: 9,
+          view: "Auto",
+          style: "satellite_road_labels",
+          //style: "satellite",
+          //showLogo: true,
+
+          // Add authentication details for connecting to Azure Maps.
+          authOptions: {
+            // Use SAS token for authentication
+            //authType: 'sas',
+            //getToken: function (resolve, reject, map) {
+            // URL to your authentication service that retrieves a SAS Token
+            //var tokenServiceUrl = 'https://samples.azuremaps.com/api/GetAzureMapsSasToken';
+
+            //fetch(tokenServiceUrl).then(r => r.text()).then(token => resolve(token));
+            //}
+
+            // Alternatively, use an Azure Maps key.
+            // Get an Azure Maps key at https://azure.com/maps.
+            // NOTE: The primary key should be used as the key.
+            authType: "subscriptionKey",
+            subscriptionKey: "",
+          },
+        });
+
+        //Construct a fullscreen control and add it to the map.
+        map.controls.add(
+          [
+            new atlas.control.ZoomControl(),
+            new atlas.control.PitchControl(),
+            new atlas.control.CompassControl(),
+            new atlas.control.StyleControl(),
+            new atlas.control.FullscreenControl(),
+            new atlas.control.ScaleControl(),
+          ],
+          {
+            position: "top-right",
+          }
+        );
+
+        //Wait until the map resources are ready.
+        map.events.add("ready", function () {
+          console.log("✅ Mapa pronto!");
+          //Create a data source to store the data in.
+          datasource = new atlas.source.DataSource();
+          map.sources.add(datasource);
+
+          //Add layers fro rendering data in the data source.
+          map.layers.add([
+            //Render linestring data using a line layer.
+            new atlas.layer.LineLayer(datasource, null, {
+              strokeColor: "blue",
+              strokeWidth: 5,
+            }),
+
+            //Render point data using a symbol layer.
+            new atlas.layer.SymbolLayer(datasource, null, {
+              textOptions: {
+                textField: ["get", "title"],
+                offset: [0, -1.2],
+                color: "white",
+              },
+              filter: [
+                "any",
+                ["==", ["geometry-type"], "Point"],
+                ["==", ["geometry-type"], "MultiPoint"],
+              ], //Only render Point or MultiPoints in this layer.
+            }),
+          ]);
+
+          //Add waypoints to the map and build the waypoint query string.
+          var points = [];
+          var query = [];
+          defaultOrder = [];
+
+          for (var i = 0; i < waypoints.length; i++) {
+            points.push(
+              new atlas.data.Feature(new atlas.data.Point(waypoints[i]), {
+                title: i + "",
+              })
+            );
+
+            query.push(waypoints[i][1] + "," + waypoints[i][0]);
+            defaultOrder.push(i);
+          }
+
+          //Add the points to the data source.
+          datasource.add(points);
+
+          //Create the waypoint query string value to be used in the routing requests.
+          waypointQuery = query.join(":");
+        });
+      }
+
+      function calculateRoute(optimized) {
+        console.log(
+          "🛣️ Calculando rota...",
+          optimized ? "Otimizada" : "Normal"
+        );
+        //Remove any previously calculated route information.
+        if (routeLine) {
+          datasource.remove(routeLine);
+          routeLine = null;
+
+          document.getElementById("output").innerHTML = "";
+        }
+
+        //Create request to calculate a route in the order in which the waypoints are provided.
+        var requestUrl = restRoutingRequestUrl.replace(
+          "{query}",
+          waypointQuery
+        );
+
+        if (optimized) {
+          requestUrl += "&computeBestOrder=true";
+        }
+
+        console.log("🌐 URL da requisição:", requestUrl);
+        //Proces the request.
+        processRequest(requestUrl).then(async (r) => {
+          console.log("📊 Resposta recebida:", r);
+          addRouteToMap(r.routes[0]);
+
+          var output =
+            "Distance: " +
+            Math.round(r.routes[0].summary.lengthInMeters / 10) / 100 +
+            " km<br/>";
+
+          var waypointOrder;
+          if (optimized) {
+            var pinOrder = ["0"];
+
+            for (var i = 0; i < r.optimizedWaypoints.length; i++) {
+              //Increase index by one to account for origin index.
+              pinOrder.push(r.optimizedWaypoints[i].optimizedIndex + 1);
+            }
+
+            //Add the desintation index to the end.
+            pinOrder.push(waypoints.length - 1);
+
+            output += "Waypoint Order: " + pinOrder.join(", ");
+            waypointOrder = pinOrder;
+          } else {
+            output += "Waypoint Order: " + defaultOrder.join(", ");
+            waypointOrder = defaultOrder;
+          }
+
+          // Salvar dados da rota no Azure Blob Storage
+          var routeData = {
+            timestamp: new Date().toISOString(),
+            routeType: optimized ? "optimized" : "normal",
+            totalDistance: r.routes[0].summary.lengthInMeters,
+            totalDistanceKm:
+              Math.round(r.routes[0].summary.lengthInMeters / 10) / 100,
+            totalTime: r.routes[0].summary.travelTimeInSeconds,
+            waypointOrder: waypointOrder,
+          };
+
+          await saveRouteToBlob(routeData);
+
+          document.getElementById("output").innerHTML += output;
+        });
+      }
+
+      function addRouteToMap(route) {
+        console.log("📍 Adicionando rota ao mapa:", route);
+        var routeCoordinates = [];
+
+        for (var legIndex = 0; legIndex < route.legs.length; legIndex++) {
+          var leg = route.legs[legIndex];
+
+          //Convert the route point data into a format that the map control understands.
+          var legCoordinates = leg.points.map(function (point) {
+            return [point.longitude, point.latitude];
+          });
+
+          //Combine the route point data for each route leg together to form a single path.
+          routeCoordinates = routeCoordinates.concat(legCoordinates);
+        }
+
+        //Create a LineString from the route path points and add it to the data source.
+        routeLine = new atlas.Shape(
+          new atlas.data.LineString(routeCoordinates)
+        );
+        datasource.add(routeLine);
+      }
+
+      async function saveRouteToBlob(routeData) {
+        console.log("💾 Salvando dados da rota no Azure Blob Storage...");
+
+        try {
+          // Verificar se o Blob Storage está configurado
+          if (
+            blobStorageConfig.accountName === "YOUR_STORAGE_ACCOUNT_NAME" ||
+            blobStorageConfig.sasToken === "YOUR_SAS_TOKEN"
+          ) {
+            console.warn(
+              "⚠️ Azure Blob Storage não configurado. Use o botão 'Configurar Blob Storage'."
+            );
+            var warningMsg = `<br/><span style="color: orange;">⚠️ Configure o Blob Storage para salvar os dados</span>`;
+            document.getElementById("output").innerHTML += warningMsg;
+            return { success: false, error: "Blob Storage não configurado" };
+          }
+
+          // Gerar nome único do arquivo
+          var fileName = `route_${routeData.routeType}_${Date.now()}.json`;
+
+          // Construir URL do blob
+          var blobUrl = `https://${blobStorageConfig.accountName}.blob.core.windows.net/${blobStorageConfig.containerName}/${fileName}?${blobStorageConfig.sasToken}`;
+
+          // Fazer upload do arquivo
+          var response = await fetch(blobUrl, {
+            method: "PUT",
+            headers: {
+              "x-ms-blob-type": "BlockBlob",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(routeData, null, 2),
+          });
+
+          if (response.ok) {
+            console.log("✅ Dados da rota salvos com sucesso:", fileName);
+
+            // Mostrar mensagem de sucesso na interface
+            var successMsg = `<br/><div style="color: green;">✅ Dados salvos: ${fileName}</div>`;
+            document.getElementById("output").innerHTML += successMsg;
+
+            return {
+              success: true,
+              fileName: fileName,
+              url: blobUrl.split("?")[0], // URL sem SAS token
+            };
+          } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+        } catch (error) {
+          console.error("❌ Erro ao salvar no blob storage:", error);
+
+          // Mostrar erro na interface
+          var errorMsg = `<br/><span style="color: red;">❌ Erro ao salvar: ${error.message}</span>`;
+          document.getElementById("output").innerHTML += errorMsg;
+
+          return {
+            success: false,
+            error: error.message,
+          };
+        }
+      }
+
+      function configureBlobStorage() {
+        console.log("⚙️ Configurando Azure Blob Storage...");
+
+        var accountName = prompt(
+          "Digite o nome da conta de armazenamento Azure:",
+          blobStorageConfig.accountName
+        );
+
+        if (accountName) {
+          var containerName = prompt(
+            "Digite o nome do container:",
+            blobStorageConfig.containerName
+          );
+
+          if (containerName) {
+            var sasToken = prompt(
+              "Digite o SAS Token (com permissões de write):",
+              blobStorageConfig.sasToken
+            );
+
+            if (sasToken) {
+              blobStorageConfig.accountName = accountName;
+              blobStorageConfig.containerName = containerName;
+              blobStorageConfig.sasToken = sasToken;
+
+              console.log("✅ Configuração do Blob Storage atualizada:", {
+                accountName: blobStorageConfig.accountName,
+                containerName: blobStorageConfig.containerName,
+                sasToken: "***TOKEN_OCULTO***",
+              });
+
+              alert(
+                "Configuração do Azure Blob Storage atualizada com sucesso!"
+              );
+            }
+          }
+        }
+      }
+    </script>
+  </head>
+  <body onload="getMap()">
+    <div
+      id="myMap"
+      style="position: relative; width: 100%; min-width: 290px; height: 600px"
+    ></div>
+
+    <div
+      style="
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        background-color: white;
+        padding: 10px;
+        border-radius: 10px;
+      "
+    >
+      <input type="button" value="Calculate Route" onclick="calculateRoute()" />
+      <input
+        type="button"
+        value="Calculate Waypoint Optimized Route"
+        onclick="calculateRoute(true)"
+      />
+      <br />
+      <!--
+      <input
+        type="button"
+        value="⚙️ Configurar Blob Storage"
+        onclick="configureBlobStorage()"
+        style="margin-top: 5px; background-color: #f0f8ff"
+      />
+      -->
+      <div id="output"></div>
+    </div>
+
+    <fieldset
+      style="width: calc(100% - 30px); min-width: 290px; margin-top: 10px"
+    >
+      <legend>Route Waypoint Optimization</legend>
+      This sample shows how to calculate routes with and without waypoint
+      optimization using the Azure Maps REST Route API.
+      <br />
+      <br />
+      <b>Note:</b> The optimized waypoint order information from the routing
+      service provides a set of indices. These exclude the origin and
+      destination indices. You need to increase all of these values by 1 to
+      account for the origin and then add your destination to the end to get the
+      complete ordered waypoint list.
+    </fieldset>
+  </body>
+</html>
