@@ -1,4 +1,7 @@
-﻿<!DOCTYPE html>
+﻿<!-- file:///c:/_repo/azure-maps/AzureMapsCodeSamples/Samples/REST%20Services/Route%20Waypoint%20Optimization/Route_Waypoint_Optimization_with_storage.html -->
+C:\_repo\azure-maps\AzureMapsCodeSamples\Samples\REST Services\Route Waypoint
+Optimization\Route_Waypoint_Optimization_with_storage.html
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <title>Route Waypoint Optimization - Azure Maps Web SDK Samples</title>
@@ -87,6 +90,10 @@
           },
         });
 
+        // Add click events # location button
+        locateMeButton = document.getElementById("locate-me-button");
+        locateMeButton.addEventListener("click", locateMe);
+
         //Construct a fullscreen control and add it to the map.
         map.controls.add(
           [
@@ -109,7 +116,7 @@
           datasource = new atlas.source.DataSource();
           map.sources.add(datasource);
 
-          //Add layers fro rendering data in the data source.
+          //Add layers for rendering data in the data source.
           map.layers.add([
             //Render linestring data using a line layer.
             new atlas.layer.LineLayer(datasource, null, {
@@ -131,6 +138,29 @@
               ], //Only render Point or MultiPoints in this layer.
             }),
           ]);
+
+          // locate button
+          // Create a polygon layer to render the filled in area of the accuracy circle for the users position.
+          var loacteMeLayer = new atlas.layer.PolygonLayer(datasource, null, {
+            fillColor: "rgba(0, 153, 255, 0.5)",
+            filter: ["==", "layer", "locateMe"],
+          });
+          // Create a symbol layer to render the users position on the map.
+          var loacteMeSymbolLayer = new atlas.layer.SymbolLayer(
+            datasource,
+            null,
+            {
+              iconOptions: {
+                image: "marker-red",
+                anchor: "center",
+                allowOverlap: true,
+              },
+              filter: ["==", "layer", "locateMe"],
+            }
+          );
+
+          // Add layers to the map
+          map.layers.add([loacteMeSymbolLayer, loacteMeLayer]);
 
           //Add waypoints to the map and build the waypoint query string.
           var points = [];
@@ -349,6 +379,44 @@
           }
         }
       }
+
+      function locateMe(e) {
+        var locateMeIcon = document.getElementById("locate-me-icon");
+        var locateMeSpinner = document.getElementById("locate-me-spinner");
+
+        locateMeButton.disabled = true;
+        locateMeButton.className = "btn btn-warning";
+        locateMeIcon.style.display = "none";
+        locateMeSpinner.style.display = "block";
+
+        //User position
+        navigator.geolocation.getCurrentPosition(
+          function (position) {
+            userPositionUpdated = true;
+            userPosition = [
+              position.coords.longitude,
+              position.coords.latitude,
+            ];
+
+            //Center the map on the users position.
+            map.setCamera({
+              center: userPosition,
+              zoom: 15,
+              pitch: 0,
+              bearing: 0,
+            });
+          },
+          function (error) {
+            //If an error occurs when trying to access the users position information, display an error message.
+            alert("Sorry, your position information is unavailable!");
+
+            locateMeButton.disabled = false;
+            locateMeButton.className = "btn btn-outline-secondary";
+            locateMeIcon.style.display = "block";
+            locateMeSpinner.style.display = "none";
+          }
+        );
+      }
     </script>
   </head>
   <body onload="getMap()">
@@ -382,6 +450,28 @@
         style="margin-top: 5px; background-color: #f0f8ff"
       />
       -->
+      <div
+        class="d-flex gap-2 w-100 mb-3 pb-3 justify-content-between border-bottom"
+      >
+        <button
+          title="Locate Me"
+          tabindex="211"
+          id="locate-me-button"
+          type="button"
+          class="btn btn-outline-secondary"
+        >
+          <svg id="locate-me-icon" width="1.0em" height="1.0em">
+            <use xlink:href="#bullseye-icon" />
+          </svg>
+          <span
+            id="locate-me-spinner"
+            class="spinner-grow spinner-grow-sm"
+            style="display: none"
+            role="status"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </div>
       <div id="output"></div>
     </div>
 
